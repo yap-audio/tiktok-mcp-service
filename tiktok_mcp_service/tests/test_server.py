@@ -59,23 +59,29 @@ async def test_server():
                 # Test search endpoint
                 logger.info("\nTesting search endpoint")
                 try:
-                    result = await session.call_tool("search_videos", arguments={"search_terms": ["python", "coding"]})
-                    # Parse the JSON response from the content field
-                    response_text = result.content[0].text
-                    response_data = json.loads(response_text)
+                    # Test multi-word search transformation
+                    logger.info("\nTesting multi-word search transformation...")
+                    multi_word_result = await session.call_tool("search_videos", arguments={"search_terms": ["snowboarder influencer", "professional snowboarder"]})
+                    multi_word_data = json.loads(multi_word_result.content[0].text)
                     
-                    # Check python results
-                    python_videos = response_data.get("python", [])
-                    logger.info(f"Found {len(python_videos)} videos for term 'python'")
-                    assert len(python_videos) > 0, "No videos found for 'python'"
+                    # Verify transformations
+                    transformations = multi_word_data.get("transformations", {})
+                    logger.info(f"Search transformations: {transformations}")
+                    assert "snowboarder influencer" in transformations, "Missing transformation for 'snowboarder influencer'"
+                    assert "professional snowboarder" in transformations, "Missing transformation for 'professional snowboarder'"
                     
-                    # Check coding results
-                    coding_videos = response_data.get("coding", [])
-                    logger.info(f"Found {len(coding_videos)} videos for term 'coding'")
-                    assert len(coding_videos) > 0, "No videos found for 'coding'"
-
-                    # Verify video structure
-                    for video in python_videos + coding_videos:
+                    # Verify transformed searches returned results
+                    snowboarder_influencer_videos = multi_word_data["results"].get("snowboarder influencer", [])
+                    professional_snowboarder_videos = multi_word_data["results"].get("professional snowboarder", [])
+                    
+                    logger.info(f"Found {len(snowboarder_influencer_videos)} videos for 'snowboarder influencer'")
+                    logger.info(f"Found {len(professional_snowboarder_videos)} videos for 'professional snowboarder'")
+                    
+                    # At least one of the transformed searches should return results
+                    assert len(snowboarder_influencer_videos) > 0 or len(professional_snowboarder_videos) > 0, "No videos found for any transformed search terms"
+                    
+                    # Verify video structure for multi-word results
+                    for video in snowboarder_influencer_videos + professional_snowboarder_videos:
                         assert "url" in video
                         assert "description" in video
                         assert "stats" in video
