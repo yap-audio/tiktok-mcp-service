@@ -52,10 +52,10 @@ class TikTokClient:
             session_params = {
                 "ms_tokens": [self.ms_token] if self.ms_token else None,
                 "num_sessions": 1,
-                "sleep_after": 5,  # Increased from 3 to 5
-                "browser": "webkit",
+                "sleep_after": 8,  # Increased from 5 to 8
+                "browser": "firefox",  # Changed from webkit to firefox
                 "headless": False,
-                "timeout": 90000,  # Increased from 60s to 90s
+                "timeout": 120000,  # Increased from 90s to 120s
                 "context_options": {
                     "viewport": {
                         "width": 1920,
@@ -86,32 +86,54 @@ class TikTokClient:
                     // Remove webdriver
                     delete Object.getPrototypeOf(navigator).webdriver;
                     
-                    // Update navigator properties
+                    // Update navigator properties with more realistic values
                     Object.defineProperty(navigator, 'languages', {
-                        get: () => ['en-US', 'en'],
+                        get: () => ['en-US', 'en', 'es'],
                     });
                     
+                    // Add random plugins count
                     Object.defineProperty(navigator, 'plugins', {
-                        get: () => [1, 2, 3, 4, 5],
+                        get: () => new Array(Math.floor(Math.random() * 8) + 3),
                     });
                     
                     Object.defineProperty(navigator, 'webdriver', {
-                        get: () => false,
+                        get: () => undefined,  // Changed from false to undefined
                     });
                     
-                    // Add Chrome Runtime
+                    // Add more realistic Chrome properties
                     window.chrome = {
-                        runtime: {},
+                        runtime: {
+                            connect: () => {},
+                            sendMessage: () => {},
+                        },
+                        webstore: {},
+                        app: {},
                     };
                     
-                    // Modify WebGL vendor and renderer
+                    // Add random screen properties
+                    Object.defineProperty(screen, 'colorDepth', {
+                        get: () => 24,
+                    });
+                    
+                    Object.defineProperty(screen, 'pixelDepth', {
+                        get: () => 24,
+                    });
+                    
+                    // Modify WebGL vendor and renderer with more variations
                     const getParameter = WebGLRenderingContext.prototype.getParameter;
                     WebGLRenderingContext.prototype.getParameter = function(parameter) {
+                        const vendors = ['Intel Inc.', 'AMD', 'NVIDIA Corporation'];
+                        const renderers = [
+                            'Intel Iris OpenGL Engine',
+                            'AMD Radeon Pro',
+                            'NVIDIA GeForce'
+                        ];
+                        
                         if (parameter === 37445) {
-                            return 'Intel Inc.';
+                            return vendors[Math.floor(Math.random() * vendors.length)];
                         }
                         if (parameter === 37446) {
-                            return 'Intel Iris OpenGL Engine';
+                            return renderers[Math.floor(Math.random() * renderers.length)];
                         }
                         return getParameter.apply(this, arguments);
                     };
