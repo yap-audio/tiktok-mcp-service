@@ -36,20 +36,20 @@ poetry run python -m tiktok_mcp_service.main
 
 ## Claude Desktop Integration
 
-Once your service is running, you can integrate it with Claude Desktop:
+Once your service is running, you can integrate it with Claude Desktop. Since we're using Poetry for dependency management, make sure to run the MCP CLI commands through Poetry:
 
 ```bash
-# Install the service in Claude Desktop
-mcp install tiktok_mcp_service/main.py
+# Navigate to the project directory
+cd /path/to/tiktok-mcp-service
+
+# Install the service in Claude Desktop with Poetry in editable mode
+poetry run mcp install tiktok_mcp_service/main.py --with-editable . -f .env
 
 # Optional: Install with a custom name
-mcp install tiktok_mcp_service/main.py --name "TikTok Video Search"
-
-# Optional: Install with environment variables from .env
-mcp install tiktok_mcp_service/main.py -f .env
+poetry run mcp install tiktok_mcp_service/main.py --name "TikTok Video Search" --with-editable . -f .env
 ```
 
-After installation, the service will be available in Claude Desktop for video search and discovery tasks.
+After installation, the service will be available in Claude Desktop and will run using Poetry for proper dependency management.
 
 ## API Endpoints
 

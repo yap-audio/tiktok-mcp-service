@@ -43,17 +43,19 @@ class TikTokClient:
             if self.api:
                 await self.api.__aexit__(None, None, None)
             
+            logger.info("Creating new TikTokApi instance...")
             self.api = TikTokApi()
             await self.api.__aenter__()
+            logger.info("TikTokApi instance created successfully")
             
             # Create sessions with proxy if available
             session_params = {
                 "ms_tokens": [self.ms_token] if self.ms_token else None,
                 "num_sessions": 1,
-                "sleep_after": 3,
+                "sleep_after": 5,  # Increased from 3 to 5
                 "browser": "webkit",
                 "headless": False,
-                "timeout": 60000,  # Increase timeout to 60 seconds
+                "timeout": 90000,  # Increased from 60s to 90s
                 "context_options": {
                     "viewport": {
                         "width": 1920,
@@ -65,18 +67,20 @@ class TikTokClient:
                     "media",
                     "font",
                     "other"
-                ]  # Speed up page load by suppressing non-essential resources
+                ]
             }
             
             if self.proxy:
-                # Use proxy through playwright's proxy configuration
                 logger.info(f"Using proxy: {self.proxy}")
                 session_params["proxies"] = [self.proxy]
             
             # Create the session
+            logger.info("Creating TikTok session with params: %s", session_params)
             await self.api.create_sessions(**session_params)
+            logger.info("TikTok session created successfully")
             
             # Add anti-detection scripts to each session
+            logger.info("Adding anti-detection scripts to session...")
             for session in self.api.sessions:
                 await session.page.add_init_script("""
                     // Remove webdriver
@@ -116,11 +120,14 @@ class TikTokClient:
             self.last_init_time = current_time
             logger.info("TikTok API initialized successfully with anti-detection configuration")
             
-            # Wait a moment for the session to be fully ready
-            await asyncio.sleep(2)
+            # Increased initial wait time
+            logger.info("Waiting for session to stabilize...")
+            await asyncio.sleep(5)  # Increased from 2 to 5
+            logger.info("Session ready")
             
         except Exception as e:
-            logger.error(f"Failed to initialize TikTok API: {e}")
+            logger.error(f"Failed to initialize TikTok API: {str(e)}")
+            logger.error(f"Error type: {type(e)}")
             if self.api:
                 try:
                     await self.api.__aexit__(None, None, None)
@@ -190,33 +197,37 @@ class TikTokClient:
                 hashtag = await self.api.hashtag(name=query).info()
                 logger.info(f"Hashtag info received: {json.dumps(hashtag, indent=2)}")
                 
-                # Add a small delay between getting info and videos
-                await asyncio.sleep(2)
+                # Increased delay between info and videos
+                logger.info("Waiting before fetching videos...")
+                await asyncio.sleep(5)  # Increased from 2 to 5
                 
                 # Get videos for the hashtag
                 logger.info(f"Fetching videos for hashtag #{query}...")
                 video_count = 0
                 
                 # Create video iterator
+                logger.info("Creating video iterator...")
                 video_iterator = self.api.hashtag(name=query).videos(count=count)
-                logger.info("Created video iterator")
+                logger.info("Video iterator created successfully")
                 
                 try:
+                    logger.info("Starting video iteration...")
                     async for video in video_iterator:
                         video_count += 1
                         logger.info(f"Retrieved video {video_count}/{count}")
                         logger.debug(f"Video data: {json.dumps(video.as_dict, indent=2)}")
                         videos.append(video.as_dict)
                         
-                        # Add a small delay between video fetches
-                        await asyncio.sleep(0.5)
+                        # Increased delay between video fetches
+                        logger.info("Waiting before next video fetch...")
+                        await asyncio.sleep(1)  # Increased from 0.5 to 1
                         
-                        # Break if we've reached the desired count
                         if video_count >= count:
                             break
                 except Exception as e:
                     logger.error(f"Error during video iteration: {e}")
                     logger.error(f"Error type: {type(e)}")
+                    logger.error(f"Error args: {e.args}")
                     raise
                 
                 logger.info(f"Successfully retrieved {len(videos)} videos for #{query}")
@@ -224,10 +235,14 @@ class TikTokClient:
                 
             except Exception as e:
                 logger.error(f"Error fetching videos for #{query}: {e}")
+                logger.error(f"Error type: {type(e)}")
+                logger.error(f"Error args: {e.args}")
                 raise
                 
         except Exception as e:
             logger.error(f"Failed to search for videos: {e}")
+            logger.error(f"Error type: {type(e)}")
+            logger.error(f"Error args: {e.args}")
             raise
 
     async def get_user_info(self, username: str) -> Dict[str, Any]:
