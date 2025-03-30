@@ -111,46 +111,80 @@ async def search_videos(search_terms: List[str], count: int = 30) -> Dict[str, A
                 # Transform and validate the search term
                 original_term = term
                 
-                # Remove any existing hashtag
-                term = term.lstrip('#')
-                
-                # If it contains spaces, transform it
+                # Split multi-word terms into individual hashtags
                 if ' ' in term:
-                    transformed_term = ''.join(term.split())
-                    logger.info(f"Transformed multi-word search '{term}' into hashtag '#{transformed_term}'")
-                    transformations[original_term] = f"#{transformed_term}"
-                    term = transformed_term
-                
-                # Ensure it's prefixed with #
-                if not term.startswith('#'):
-                    term = f"#{term}"
-                
-                # Get videos for the term
-                videos = await tiktok_client.search_videos(term, count)
-                
-                # Process video data
-                processed_videos = []
-                for video in videos:
-                    # Extract video ID and author from video ID string (format: username_id)
-                    video_id = video.get('id', '')
-                    author = video.get('author', {}).get('uniqueId', '')
-                    if not author and '_' in video_id:
-                        author = video_id.split('_')[0]
+                    # Split and clean each word
+                    hashtags = [word.strip().lower() for word in term.split() if word.strip()]
+                    logger.info(f"Split multi-word search '{term}' into hashtags: {', '.join(['#' + h for h in hashtags])}")
+                    transformations[original_term] = [f"#{h}" for h in hashtags]
                     
-                    processed_videos.append({
-                        'url': f"https://www.tiktok.com/@{author}/video/{video_id}",
-                        'description': video.get('desc', ''),
-                        'stats': {
-                            'views': video.get('stats', {}).get('playCount', 0),
-                            'likes': video.get('stats', {}).get('diggCount', 0),
-                            'shares': video.get('stats', {}).get('shareCount', 0),
-                            'comments': video.get('stats', {}).get('commentCount', 0)
-                        }
-                    })
-                
-                # Store results under the original term for consistency
-                results[original_term] = processed_videos
-                logger.info(f"Found {len(processed_videos)} videos for term '{term}'")
+                    # Search for each hashtag
+                    all_videos = []
+                    for hashtag in hashtags:
+                        try:
+                            videos = await tiktok_client.search_videos(f"#{hashtag}", count=count)
+                            all_videos.extend(videos)
+                        except Exception as e:
+                            logger.error(f"Error searching for hashtag '#{hashtag}': {str(e)}")
+                            logger.error(f"Error type: {type(e)}")
+                            continue
+                    
+                    # Process video data
+                    processed_videos = []
+                    seen_ids = set()  # To avoid duplicates
+                    
+                    for video in all_videos:
+                        video_id = video.get('id', '')
+                        if video_id in seen_ids:
+                            continue
+                        
+                        seen_ids.add(video_id)
+                        author = video.get('author', {}).get('uniqueId', '')
+                        if not author and '_' in video_id:
+                            author = video_id.split('_')[0]
+                        
+                        processed_videos.append({
+                            'url': f"https://www.tiktok.com/@{author}/video/{video_id}",
+                            'description': video.get('desc', ''),
+                            'stats': {
+                                'views': video.get('stats', {}).get('playCount', 0),
+                                'likes': video.get('stats', {}).get('diggCount', 0),
+                                'shares': video.get('stats', {}).get('shareCount', 0),
+                                'comments': video.get('stats', {}).get('commentCount', 0)
+                            }
+                        })
+                    
+                    results[original_term] = processed_videos
+                    logger.info(f"Found {len(processed_videos)} unique videos for term '{term}'")
+                    
+                else:
+                    # Single word term - process as before
+                    term = term.lstrip('#')
+                    if not term.startswith('#'):
+                        term = f"#{term}"
+                    
+                    videos = await tiktok_client.search_videos(term, count)
+                    processed_videos = []
+                    
+                    for video in videos:
+                        video_id = video.get('id', '')
+                        author = video.get('author', {}).get('uniqueId', '')
+                        if not author and '_' in video_id:
+                            author = video_id.split('_')[0]
+                        
+                        processed_videos.append({
+                            'url': f"https://www.tiktok.com/@{author}/video/{video_id}",
+                            'description': video.get('desc', ''),
+                            'stats': {
+                                'views': video.get('stats', {}).get('playCount', 0),
+                                'likes': video.get('stats', {}).get('diggCount', 0),
+                                'shares': video.get('stats', {}).get('shareCount', 0),
+                                'comments': video.get('stats', {}).get('commentCount', 0)
+                            }
+                        })
+                    
+                    results[original_term] = processed_videos
+                    logger.info(f"Found {len(processed_videos)} videos for term '{term}'")
                 
             except Exception as e:
                 logger.error(f"Error searching for term '{term}': {str(e)}")
@@ -169,7 +203,7 @@ async def search_videos(search_terms: List[str], count: int = 30) -> Dict[str, A
         "results": results,
         "logs": logs,
         "errors": errors,
-        "transformations": transformations  # Show what terms were transformed
+        "transformations": transformations
     }
 
 @mcp.tool()
