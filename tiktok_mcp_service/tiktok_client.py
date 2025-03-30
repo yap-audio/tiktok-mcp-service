@@ -210,6 +210,10 @@ class TikTokClient:
                         
                         # Add a small delay between video fetches
                         await asyncio.sleep(0.5)
+                        
+                        # Break if we've reached the desired count
+                        if video_count >= count:
+                            break
                 except Exception as e:
                     logger.error(f"Error during video iteration: {e}")
                     logger.error(f"Error type: {type(e)}")
