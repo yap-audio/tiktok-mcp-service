@@ -6,7 +6,7 @@ async def main():
     # Create server parameters for stdio connection
     server_params = StdioServerParameters(
         command="python",
-        args=["tiktok_mcp_service/server.py"],
+        args=["tiktok_mcp_service/main.py"],
     )
     
     try:

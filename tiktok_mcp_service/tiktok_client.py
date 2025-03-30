@@ -171,7 +171,7 @@ class TikTokClient:
         return videos
 
     async def search_videos(self, query: str, count: int = 30) -> List[Dict[str, Any]]:
-        """Search for videos by hashtag"""
+        """Search for videos by hashtag or keyword"""
         videos = []
         try:
             # Initialize API if needed
@@ -182,14 +182,13 @@ class TikTokClient:
             
             # Remove # if present
             query = query.lstrip('#')
-            logger.info(f"Searching for hashtag: {query}")
+            logger.info(f"Searching for term: {query}")
             
-            # Get hashtag info first
             try:
-                hashtag = self.api.hashtag(name=query)
-                logger.info("Getting hashtag info...")
-                hashtag_info = await hashtag.info()
-                logger.info(f"Hashtag info received: {json.dumps(hashtag_info, indent=2)}")
+                # Get hashtag info first
+                logger.info(f"Getting hashtag info for #{query}...")
+                hashtag = await self.api.hashtag(name=query).info()
+                logger.info(f"Hashtag info received: {json.dumps(hashtag, indent=2)}")
                 
                 # Add a small delay between getting info and videos
                 await asyncio.sleep(2)
@@ -197,37 +196,35 @@ class TikTokClient:
                 # Get videos for the hashtag
                 logger.info(f"Fetching videos for hashtag #{query}...")
                 video_count = 0
-                async for video in hashtag.videos(count=count):
-                    video_count += 1
-                    logger.info(f"Retrieved video {video_count}/{count}")
-                    
-                    # Add basic video info to logs
-                    video_dict = video.as_dict
-                    logger.info(f"Video {video_count} details: "
-                              f"ID: {video_dict.get('id', 'N/A')}, "
-                              f"Desc: {video_dict.get('desc', 'N/A')[:50]}...")
-                    
-                    videos.append(video_dict)
-                    
-                    # Add small delay between video fetches
-                    await asyncio.sleep(0.5)
-                    
-                logger.info(f"Successfully retrieved {len(videos)} videos for #{query}")
-                    
-            except Exception as e:
-                error_msg = str(e)
-                if "TikTok returned an invalid response" in error_msg:
-                    logger.warning(f"Hashtag #{query} not found or returned invalid response")
-                    logger.debug(f"Full error: {error_msg}")
-                else:
-                    logger.error(f"Failed to search hashtag videos: {error_msg}")
+                
+                # Create video iterator
+                video_iterator = self.api.hashtag(name=query).videos(count=count)
+                logger.info("Created video iterator")
+                
+                try:
+                    async for video in video_iterator:
+                        video_count += 1
+                        logger.info(f"Retrieved video {video_count}/{count}")
+                        logger.debug(f"Video data: {json.dumps(video.as_dict, indent=2)}")
+                        videos.append(video.as_dict)
+                        
+                        # Add a small delay between video fetches
+                        await asyncio.sleep(0.5)
+                except Exception as e:
+                    logger.error(f"Error during video iteration: {e}")
+                    logger.error(f"Error type: {type(e)}")
                     raise
                 
+                logger.info(f"Successfully retrieved {len(videos)} videos for #{query}")
+                return videos
+                
+            except Exception as e:
+                logger.error(f"Error fetching videos for #{query}: {e}")
+                raise
+                
         except Exception as e:
-            logger.error(f"Failed to search videos: {str(e)}")
+            logger.error(f"Failed to search for videos: {e}")
             raise
-            
-        return videos
 
     async def get_user_info(self, username: str) -> Dict[str, Any]:
         """Get user information"""

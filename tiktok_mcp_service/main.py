@@ -1,118 +1,141 @@
-from fastapi import FastAPI, HTTPException
-from TikTokApi import TikTokApi
+from mcp.server.fastmcp import FastMCP
+import logging
+from typing import Dict, Any, List, Tuple
+from tiktok_mcp_service.tiktok_client import TikTokClient
 import asyncio
-from typing import List, Dict, Optional
-from datetime import datetime
-import os
-from pathlib import Path
+from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator
+from mcp.server import Server
 import json
-import uvicorn
+import mcp.server.stdio
+from mcp.server.models import InitializationOptions
 
-app = FastAPI(title="TikTok MCP Service")
-api: Optional[TikTokApi] = None
-captures_dir = Path("captures")
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# Ensure captures directory exists
-captures_dir.mkdir(exist_ok=True)
+# Initialize TikTok client
+tiktok_client = TikTokClient()
 
-@app.on_event("startup")
-async def startup_event():
-    """Initialize the TikTok API on startup."""
-    global api
-    api = TikTokApi()
-    # Create a session pool - we can adjust num_sessions based on load
-    await api.create_sessions(num_sessions=1, sleep_after=3)
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Clean up resources on shutdown."""
-    global api
-    if api:
-        await api.close_sessions()
-        api = None
-
-@app.get("/health")
-async def health_check() -> Dict:
-    """Check if the service is running and initialized."""
-    return {
-        "status": "ok",
-        "initialized": api is not None,
-        "timestamp": datetime.utcnow().isoformat()
-    }
-
-@app.post("/search")
-async def search_videos(keywords: List[str]) -> Dict:
-    """
-    Search for TikTok videos using the provided keywords.
-    
-    Args:
-        keywords: List of search terms
-        
-    Returns:
-        Dict containing search results with video metadata
-    """
-    if not api:
-        raise HTTPException(status_code=500, detail="Service not initialized")
-    
+@asynccontextmanager
+async def lifespan(server: Server) -> AsyncIterator[Dict[str, Any]]:
+    """Manage server startup and shutdown lifecycle."""
     try:
-        videos = []
-        search_term = " ".join(keywords)
-        timestamp = datetime.utcnow().isoformat()
-        
-        # Search for videos
-        async for video in api.search.videos(search_term, count=10):
-            # Generate unique filename for screenshot
-            video_id = video.id
-            screenshot_path = captures_dir / f"{timestamp}_{video_id}.json"
-            
-            # Save video metadata
-            video_data = {
-                "url": f"https://www.tiktok.com/@{video.author.username}/video/{video.id}",
-                "timestamp": timestamp,
-                "metadata": {
-                    "id": video.id,
-                    "author": video.author.username,
-                    "description": video.desc,
-                    "stats": {
-                        "likes": video.stats.digg_count,
-                        "comments": video.stats.comment_count,
-                        "shares": video.stats.share_count,
-                        "views": video.stats.play_count
-                    },
-                    "music": {
-                        "title": video.music.title,
-                        "author": video.music.author
-                    } if video.music else None
-                }
-            }
-            
-            # Save metadata to file
-            with open(screenshot_path, 'w') as f:
-                json.dump(video_data, f, indent=2)
-            
-            videos.append(video_data)
-        
-        return {
-            "success": True,
-            "query": search_term,
-            "timestamp": timestamp,
-            "videos": videos
+        # Initialize API on startup
+        await tiktok_client._init_api()
+        logger.info("TikTok API initialized")
+        yield {"tiktok_client": tiktok_client}
+    finally:
+        # Clean up on shutdown
+        await tiktok_client.close()
+        logger.info("TikTok API shutdown complete")
+
+# Initialize FastMCP app with lifespan
+mcp = FastMCP(
+    name="TikTok MCP Service",
+    description="A Model Context Protocol service for searching TikTok videos",
+    version="0.1.0",
+    lifespan=lifespan
+)
+
+@mcp.resource("status://health")
+async def get_health_status() -> Tuple[str, str]:
+    """Get the current health status of the service"""
+    status = {
+        "status": "running",
+        "api_initialized": tiktok_client.api is not None,
+        "service": {
+            "name": "TikTok MCP Service",
+            "version": "0.1.0",
+            "description": "A Model Context Protocol service for searching TikTok videos"
         }
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    }
+    return json.dumps(status, indent=2), "application/json"
 
-@app.post("/cleanup")
-async def cleanup() -> Dict:
-    """Clean up resources and reset the service."""
-    global api
+@mcp.prompt()
+def search_prompt(query: str) -> str:
+    """Create a prompt for searching TikTok videos"""
+    return f"""I'll help you find TikTok videos related to: {query}
+
+I can search for videos using hashtags or keywords. Would you like me to:
+1. Search for specific videos matching your query
+2. Look for trending videos in this category
+3. Find videos from specific creators
+
+Let me know what you'd like to explore!"""
+
+@mcp.tool()
+async def search_videos(search_terms: List[str], count: int = 30) -> Dict[str, Any]:
+    """Search for TikTok videos based on search terms"""
+    results = {}
+    
+    for term in search_terms:
+        try:
+            # Get videos for the term
+            videos = await tiktok_client.search_videos(term, count)
+            
+            # Process video data
+            processed_videos = []
+            for video in videos:
+                processed_videos.append({
+                    'url': f"https://www.tiktok.com/@{video.get('author', {}).get('uniqueId', '')}/video/{video.get('id')}",
+                    'description': video.get('desc'),
+                    'stats': {
+                        'views': video.get('stats', {}).get('playCount'),
+                        'likes': video.get('stats', {}).get('diggCount'),
+                        'shares': video.get('stats', {}).get('shareCount'),
+                        'comments': video.get('stats', {}).get('commentCount')
+                    }
+                })
+            
+            results[term] = processed_videos
+            logger.info(f"Found {len(processed_videos)} videos for term '{term}'")
+            
+        except Exception as e:
+            logger.error(f"Error searching for term '{term}': {str(e)}")
+            results[term] = []
+    
+    return results
+
+@mcp.tool()
+async def get_trending_videos(count: int = 30) -> Dict[str, Any]:
+    """Get trending TikTok videos"""
     try:
-        if api:
-            await api.close_sessions()
-            api = None
-        return {"success": True, "message": "Service cleaned up successfully"}
+        videos = await tiktok_client.get_trending_videos(count)
+        processed_videos = []
+        
+        for video in videos:
+            processed_videos.append({
+                'url': f"https://www.tiktok.com/@{video.get('author', {}).get('uniqueId', '')}/video/{video.get('id')}",
+                'description': video.get('desc'),
+                'stats': {
+                    'views': video.get('stats', {}).get('playCount'),
+                    'likes': video.get('stats', {}).get('diggCount'),
+                    'shares': video.get('stats', {}).get('shareCount'),
+                    'comments': video.get('stats', {}).get('commentCount')
+                }
+            })
+        
+        logger.info(f"Found {len(processed_videos)} trending videos")
+        return {
+            "videos": processed_videos
+        }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error getting trending videos: {str(e)}")
+        return {
+            "error": str(e)
+        }
+
+def main():
+    """Start the MCP server"""
+    logger.info("Starting TikTok MCP Service (press Ctrl+C to stop)")
+    try:
+        mcp.run()
+    except KeyboardInterrupt:
+        logger.info("Shutting down TikTok MCP Service")
+    except Exception as e:
+        logger.error(f"Error running MCP server: {str(e)}")
+        raise
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=3333, reload=True) 
+    main() 
