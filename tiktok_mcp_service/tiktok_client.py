@@ -214,9 +214,16 @@ class TikTokClient:
                     logger.info("Starting video iteration...")
                     async for video in video_iterator:
                         video_count += 1
-                        logger.info(f"Retrieved video {video_count}/{count}")
-                        logger.debug(f"Video data: {json.dumps(video.as_dict, indent=2)}")
-                        videos.append(video.as_dict)
+                        video_data = video.as_dict
+                        logger.info(f"Retrieved video {video_count}/{count}:")
+                        logger.info(f"  Description: {video_data.get('desc', 'N/A')[:100]}...")
+                        logger.info(f"  Author: @{video_data.get('author', {}).get('uniqueId', 'unknown')}")
+                        stats = video_data.get('stats', {})
+                        logger.info(f"  Stats: {stats.get('playCount', 0)} plays, {stats.get('diggCount', 0)} likes")
+                        logger.info(f"  URL: {video_data.get('video', {}).get('playAddr', 'N/A')}")
+                        logger.info("---")
+                        
+                        videos.append(video_data)
                         
                         # Increased delay between video fetches
                         logger.info("Waiting before next video fetch...")
