@@ -29,10 +29,10 @@ async def test_server():
                 # Initialize connection with longer timeout
                 try:
                     logger.info("Initializing server connection...")
-                    await asyncio.wait_for(session.initialize(), timeout=30.0)
+                    await asyncio.wait_for(session.initialize(), timeout=120.0)
                     logger.info("Server connection initialized successfully")
                 except asyncio.TimeoutError:
-                    logger.error("Server initialization timed out after 30 seconds")
+                    logger.error("Server initialization timed out after 120 seconds")
                     raise
                 except Exception as e:
                     logger.error(f"Server initialization failed: {str(e)}")

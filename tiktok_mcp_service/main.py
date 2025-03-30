@@ -61,18 +61,35 @@ def search_prompt(query: str) -> str:
     """Create a prompt for searching TikTok videos"""
     return f"""I'll help you find TikTok videos related to: {query}
 
-I can search for videos using hashtags or keywords. Would you like me to:
-1. Search for specific videos matching your query
-2. Look for trending videos in this category
-3. Find videos from specific creators
+IMPORTANT: This service ONLY supports single-word hashtag searches (e.g. #cooking, #snowboarding, #fitness).
+Multi-word searches or regular keywords are NOT supported.
 
-Let me know what you'd like to explore!"""
+Examples of valid searches:
+- #cooking
+- #recipe 
+- #chef
+- #snowboard
+- #workout
+
+Examples of searches that will NOT work:
+- cooking videos
+- snowboarding influencer
+- professional chef
+- workout routine
+
+Would you like me to:
+1. Search for videos with specific hashtags (must be single words starting with #)
+2. Look for trending videos in this category
+
+Please specify which single-word hashtags you'd like to explore!"""
 
 @mcp.tool()
 async def search_videos(search_terms: List[str], count: int = 30) -> Dict[str, Any]:
     """Search for TikTok videos based on search terms"""
     results = {}
     logs = []
+    errors = {}
+    transformations = {}
     
     # Create a custom log handler to capture logs
     class LogCapture(logging.Handler):
@@ -91,6 +108,23 @@ async def search_videos(search_terms: List[str], count: int = 30) -> Dict[str, A
         
         for term in search_terms:
             try:
+                # Transform and validate the search term
+                original_term = term
+                
+                # Remove any existing hashtag
+                term = term.lstrip('#')
+                
+                # If it contains spaces, transform it
+                if ' ' in term:
+                    transformed_term = ''.join(term.split())
+                    logger.info(f"Transformed multi-word search '{term}' into hashtag '#{transformed_term}'")
+                    transformations[original_term] = f"#{transformed_term}"
+                    term = transformed_term
+                
+                # Ensure it's prefixed with #
+                if not term.startswith('#'):
+                    term = f"#{term}"
+                
                 # Get videos for the term
                 videos = await tiktok_client.search_videos(term, count)
                 
@@ -114,27 +148,35 @@ async def search_videos(search_terms: List[str], count: int = 30) -> Dict[str, A
                         }
                     })
                 
-                results[term] = processed_videos
+                # Store results under the original term for consistency
+                results[original_term] = processed_videos
                 logger.info(f"Found {len(processed_videos)} videos for term '{term}'")
                 
             except Exception as e:
                 logger.error(f"Error searching for term '{term}': {str(e)}")
                 logger.error(f"Error type: {type(e)}")
-                results[term] = []
+                results[original_term] = []
+                errors[original_term] = {
+                    'error': str(e),
+                    'type': str(type(e).__name__)
+                }
     finally:
         # Remove our custom handler
         logger.removeHandler(log_capture)
     
-    # Include logs in the response
+    # Include logs, errors, and transformations in the response
     return {
         "results": results,
-        "logs": logs
+        "logs": logs,
+        "errors": errors,
+        "transformations": transformations  # Show what terms were transformed
     }
 
 @mcp.tool()
 async def get_trending_videos(count: int = 30) -> Dict[str, Any]:
     """Get trending TikTok videos"""
     logs = []
+    errors = {}
     
     # Create a custom log handler to capture logs
     class LogCapture(logging.Handler):
@@ -170,13 +212,19 @@ async def get_trending_videos(count: int = 30) -> Dict[str, Any]:
         logger.info(f"Found {len(processed_videos)} trending videos")
         return {
             "videos": processed_videos,
-            "logs": logs
+            "logs": logs,
+            "errors": errors
         }
     except Exception as e:
         logger.error(f"Error getting trending videos: {str(e)}")
-        return {
+        errors["trending"] = {
             "error": str(e),
-            "logs": logs
+            "type": str(type(e).__name__)
+        }
+        return {
+            "videos": [],
+            "logs": logs,
+            "errors": errors
         }
     finally:
         # Remove our custom handler
