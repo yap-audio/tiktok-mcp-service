@@ -24,6 +24,10 @@ async def lifespan(server: Server) -> AsyncIterator[Dict[str, Any]]:
         # Initialize API on startup
         await tiktok_client._init_api()
         logger.info("TikTok API initialized")
+        
+        # Add a delay to ensure the API is fully ready
+        await asyncio.sleep(4)
+        
         yield {"tiktok_client": tiktok_client}
     finally:
         # Clean up on shutdown
@@ -69,6 +73,10 @@ async def search_videos(search_terms: List[str], count: int = 30) -> Dict[str, A
     """Search for TikTok videos based on search terms"""
     results = {}
     
+    # Ensure API is initialized
+    if not tiktok_client.api:
+        await tiktok_client._init_api()
+    
     for term in search_terms:
         try:
             # Get videos for the term
@@ -77,14 +85,23 @@ async def search_videos(search_terms: List[str], count: int = 30) -> Dict[str, A
             # Process video data
             processed_videos = []
             for video in videos:
+                # Log raw video data for debugging
+                logger.debug(f"Raw video data: {json.dumps(video, indent=2)}")
+                
+                # Extract video ID and author from video ID string (format: username_id)
+                video_id = video.get('id', '')
+                author = video.get('author', {}).get('uniqueId', '')
+                if not author and '_' in video_id:
+                    author = video_id.split('_')[0]
+                
                 processed_videos.append({
-                    'url': f"https://www.tiktok.com/@{video.get('author', {}).get('uniqueId', '')}/video/{video.get('id')}",
-                    'description': video.get('desc'),
+                    'url': f"https://www.tiktok.com/@{author}/video/{video_id}",
+                    'description': video.get('desc', ''),
                     'stats': {
-                        'views': video.get('stats', {}).get('playCount'),
-                        'likes': video.get('stats', {}).get('diggCount'),
-                        'shares': video.get('stats', {}).get('shareCount'),
-                        'comments': video.get('stats', {}).get('commentCount')
+                        'views': video.get('stats', {}).get('playCount', 0),
+                        'likes': video.get('stats', {}).get('diggCount', 0),
+                        'shares': video.get('stats', {}).get('shareCount', 0),
+                        'comments': video.get('stats', {}).get('commentCount', 0)
                     }
                 })
             
@@ -93,6 +110,7 @@ async def search_videos(search_terms: List[str], count: int = 30) -> Dict[str, A
             
         except Exception as e:
             logger.error(f"Error searching for term '{term}': {str(e)}")
+            logger.error(f"Error type: {type(e)}")
             results[term] = []
     
     return results
@@ -101,18 +119,23 @@ async def search_videos(search_terms: List[str], count: int = 30) -> Dict[str, A
 async def get_trending_videos(count: int = 30) -> Dict[str, Any]:
     """Get trending TikTok videos"""
     try:
+        # Ensure API is initialized
+        if not tiktok_client.api:
+            await tiktok_client._init_api()
+            await asyncio.sleep(2)  # Wait for API to be fully ready
+            
         videos = await tiktok_client.get_trending_videos(count)
         processed_videos = []
         
         for video in videos:
             processed_videos.append({
                 'url': f"https://www.tiktok.com/@{video.get('author', {}).get('uniqueId', '')}/video/{video.get('id')}",
-                'description': video.get('desc'),
+                'description': video.get('desc', ''),
                 'stats': {
-                    'views': video.get('stats', {}).get('playCount'),
-                    'likes': video.get('stats', {}).get('diggCount'),
-                    'shares': video.get('stats', {}).get('shareCount'),
-                    'comments': video.get('stats', {}).get('commentCount')
+                    'views': video.get('stats', {}).get('playCount', 0),
+                    'likes': video.get('stats', {}).get('diggCount', 0),
+                    'shares': video.get('stats', {}).get('shareCount', 0),
+                    'comments': video.get('stats', {}).get('commentCount', 0)
                 }
             })
         
