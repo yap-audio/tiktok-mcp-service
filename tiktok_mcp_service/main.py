@@ -72,52 +72,80 @@ Let me know what you'd like to explore!"""
 async def search_videos(search_terms: List[str], count: int = 30) -> Dict[str, Any]:
     """Search for TikTok videos based on search terms"""
     results = {}
+    logs = []
     
-    # Ensure API is initialized
-    if not tiktok_client.api:
-        await tiktok_client._init_api()
+    # Create a custom log handler to capture logs
+    class LogCapture(logging.Handler):
+        def emit(self, record):
+            logs.append(self.format(record))
     
-    for term in search_terms:
-        try:
-            # Get videos for the term
-            videos = await tiktok_client.search_videos(term, count)
-            
-            # Process video data
-            processed_videos = []
-            for video in videos:
-                # Log raw video data for debugging
-                logger.debug(f"Raw video data: {json.dumps(video, indent=2)}")
+    # Add our custom handler
+    log_capture = LogCapture()
+    log_capture.setFormatter(logging.Formatter('%(levelname)s: %(message)s'))
+    logger.addHandler(log_capture)
+    
+    try:
+        # Ensure API is initialized
+        if not tiktok_client.api:
+            await tiktok_client._init_api()
+        
+        for term in search_terms:
+            try:
+                # Get videos for the term
+                videos = await tiktok_client.search_videos(term, count)
                 
-                # Extract video ID and author from video ID string (format: username_id)
-                video_id = video.get('id', '')
-                author = video.get('author', {}).get('uniqueId', '')
-                if not author and '_' in video_id:
-                    author = video_id.split('_')[0]
+                # Process video data
+                processed_videos = []
+                for video in videos:
+                    # Extract video ID and author from video ID string (format: username_id)
+                    video_id = video.get('id', '')
+                    author = video.get('author', {}).get('uniqueId', '')
+                    if not author and '_' in video_id:
+                        author = video_id.split('_')[0]
+                    
+                    processed_videos.append({
+                        'url': f"https://www.tiktok.com/@{author}/video/{video_id}",
+                        'description': video.get('desc', ''),
+                        'stats': {
+                            'views': video.get('stats', {}).get('playCount', 0),
+                            'likes': video.get('stats', {}).get('diggCount', 0),
+                            'shares': video.get('stats', {}).get('shareCount', 0),
+                            'comments': video.get('stats', {}).get('commentCount', 0)
+                        }
+                    })
                 
-                processed_videos.append({
-                    'url': f"https://www.tiktok.com/@{author}/video/{video_id}",
-                    'description': video.get('desc', ''),
-                    'stats': {
-                        'views': video.get('stats', {}).get('playCount', 0),
-                        'likes': video.get('stats', {}).get('diggCount', 0),
-                        'shares': video.get('stats', {}).get('shareCount', 0),
-                        'comments': video.get('stats', {}).get('commentCount', 0)
-                    }
-                })
-            
-            results[term] = processed_videos
-            logger.info(f"Found {len(processed_videos)} videos for term '{term}'")
-            
-        except Exception as e:
-            logger.error(f"Error searching for term '{term}': {str(e)}")
-            logger.error(f"Error type: {type(e)}")
-            results[term] = []
+                results[term] = processed_videos
+                logger.info(f"Found {len(processed_videos)} videos for term '{term}'")
+                
+            except Exception as e:
+                logger.error(f"Error searching for term '{term}': {str(e)}")
+                logger.error(f"Error type: {type(e)}")
+                results[term] = []
+    finally:
+        # Remove our custom handler
+        logger.removeHandler(log_capture)
     
-    return results
+    # Include logs in the response
+    return {
+        "results": results,
+        "logs": logs
+    }
 
 @mcp.tool()
 async def get_trending_videos(count: int = 30) -> Dict[str, Any]:
     """Get trending TikTok videos"""
+    logs = []
+    
+    # Create a custom log handler to capture logs
+    class LogCapture(logging.Handler):
+        def emit(self, record):
+            logs.append(self.format(record))
+    
+    # Add our custom handler
+    log_capture = LogCapture()
+    log_capture.setFormatter(logging.Formatter('%(levelname)s: %(message)s'))
+    logger.addHandler(log_capture)
+    
     try:
         # Ensure API is initialized
         if not tiktok_client.api:
@@ -141,13 +169,18 @@ async def get_trending_videos(count: int = 30) -> Dict[str, Any]:
         
         logger.info(f"Found {len(processed_videos)} trending videos")
         return {
-            "videos": processed_videos
+            "videos": processed_videos,
+            "logs": logs
         }
     except Exception as e:
         logger.error(f"Error getting trending videos: {str(e)}")
         return {
-            "error": str(e)
+            "error": str(e),
+            "logs": logs
         }
+    finally:
+        # Remove our custom handler
+        logger.removeHandler(log_capture)
 
 def main():
     """Start the MCP server"""
