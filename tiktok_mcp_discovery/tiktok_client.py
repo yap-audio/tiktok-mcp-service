@@ -1,11 +1,13 @@
 from TikTokApi import TikTokApi
-from TikTokApi.api.video import Video
+from TikTokApi.api.video import Video as TikTokVideo
+from TikTokApi.api.user import User as TikTokUser
+from TikTokApi.api.hashtag import Hashtag as TikTokHashtag
 import asyncio
 import os
 from dotenv import load_dotenv
 import logging
 import json
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
 import aiohttp
 import backoff
 from functools import lru_cache
@@ -235,119 +237,152 @@ class TikTokClient:
         max_time=30
     )
     async def _make_request(self, func, *args, **kwargs):
-        """Make an API request with retry logic"""
+        """Make an API request with retry logic and session management"""
         if not self.api:
             await self._init_api()
             if not self.api:
                 raise RuntimeError("Failed to initialize TikTok API")
         
         try:
-            return await func(*args, **kwargs)
+            result = await func(*args, **kwargs)
+            # Add random delay between requests
+            await asyncio.sleep(random.uniform(2.0, 4.0))
+            return result
         except Exception as e:
             logger.error(f"API request failed: {e}")
             # Force reinitialization on next request
             self.last_init_time = 0
             raise
 
-    @lru_cache(maxsize=100)
-    async def get_trending_videos(self, count: int = 30) -> List[Dict[str, Any]]:
-        """Get trending videos with caching"""
+    async def get_hashtag(self, name: str) -> TikTokHashtag:
+        """Get hashtag object with info"""
+        name = name.lstrip('#')  # Remove # if present
+        logger.info(f"Getting hashtag info for #{name}")
+        
+        return await self._make_request(
+            lambda: self.api.hashtag(name=name)
+        )
+
+    async def get_hashtag_videos(self, hashtag: TikTokHashtag, count: int = 30) -> List[TikTokVideo]:
+        """Get videos for a hashtag using the hashtag object"""
+        logger.info(f"Fetching videos for hashtag #{hashtag.name}")
+        
         videos = []
         try:
-            # Initialize API if needed
-            if not self.api:
-                await self._init_api()
-                if not self.api:
-                    raise RuntimeError("Failed to initialize TikTok API")
+            # Make direct request to video listing endpoint
+            raw_response = await self._make_request(
+                self.api.make_request,
+                url="https://www.tiktok.com/api/challenge/item_list/",
+                params={
+                    "challengeID": hashtag.id,
+                    "count": count,
+                    "cursor": 0
+                }
+            )
             
-            # Get trending videos
-            async for video in self.api.trending.videos(count=count):
-                videos.append(video.as_dict)
+            # Process videos from response
+            for item in raw_response.get("itemList", []):
+                video = self.api.video(data=item)
+                videos.append(video)
                 
+            logger.info(f"Successfully retrieved {len(videos)} videos for #{hashtag.name}")
+            return videos
+            
+        except Exception as e:
+            logger.error(f"Error fetching videos for #{hashtag.name}: {e}")
+            raise
+
+    async def search_videos(self, term: str, count: int = 30) -> Dict[str, Any]:
+        """
+        Search for videos by hashtag or keyword.
+        For multi-word terms, converts each word into a hashtag and searches all.
+        Returns a dict with results, transformations, and any errors.
+        """
+        videos_by_term = {}
+        transformations = {}
+        errors = {}
+        
+        try:
+            original_term = term
+            
+            # Handle multi-word searches
+            if ' ' in term:
+                # Split into individual hashtags
+                hashtags = [f"#{word.strip().lower()}" for word in term.split() if word.strip()]
+                logger.info(f"Split multi-word search '{term}' into hashtags: {', '.join(hashtags)}")
+                transformations[original_term] = hashtags
+                
+                # Search each hashtag
+                all_videos = []
+                for hashtag in hashtags:
+                    try:
+                        # Get hashtag object
+                        hashtag_obj = await self.get_hashtag(hashtag)
+                        # Get videos for this hashtag
+                        hashtag_videos = await self.get_hashtag_videos(hashtag_obj, count)
+                        all_videos.extend(hashtag_videos)
+                    except Exception as e:
+                        logger.error(f"Error searching hashtag '{hashtag}': {str(e)}")
+                        errors[hashtag] = str(e)
+                        continue
+                
+                # Deduplicate videos by ID
+                seen_ids = set()
+                unique_videos = []
+                for video in all_videos:
+                    if video.id not in seen_ids:
+                        seen_ids.add(video.id)
+                        unique_videos.append(video)
+                
+                videos_by_term[original_term] = unique_videos
+                logger.info(f"Found {len(unique_videos)} unique videos across all hashtags for '{original_term}'")
+                
+            else:
+                # Single hashtag search
+                try:
+                    hashtag_obj = await self.get_hashtag(term)
+                    videos = await self.get_hashtag_videos(hashtag_obj, count)
+                    videos_by_term[original_term] = videos
+                    logger.info(f"Found {len(videos)} videos for '{original_term}'")
+                except Exception as e:
+                    logger.error(f"Error searching term '{term}': {str(e)}")
+                    errors[original_term] = str(e)
+                    videos_by_term[original_term] = []
+            
+            return {
+                "results": videos_by_term,
+                "transformations": transformations,
+                "errors": errors
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to search for videos: {e}")
+            raise
+
+    async def get_user(self, username: str) -> TikTokUser:
+        """Get user object"""
+        logger.info(f"Getting user info for @{username}")
+        
+        return await self._make_request(
+            lambda: self.api.user(username)
+        )
+
+    @lru_cache(maxsize=100)
+    async def get_trending_videos(self, count: int = 30) -> List[TikTokVideo]:
+        """Get trending videos with caching"""
+        logger.info("Fetching trending videos")
+        
+        videos = []
+        try:
+            async for video in await self._make_request(
+                lambda: self.api.trending.videos(count=count)
+            ):
+                videos.append(video)
         except Exception as e:
             logger.error(f"Failed to get trending videos: {e}")
             raise
+            
         return videos
-
-    async def search_videos(self, term: str, count: int = 30) -> List[Dict[str, Any]]:
-        """Search for videos by hashtag or keyword"""
-        videos = []
-        try:
-            # Initialize API if needed
-            if not self.api:
-                await self._init_api()
-                if not self.api:
-                    raise RuntimeError("Failed to initialize TikTok API")
-            
-            # Remove # if present
-            term = term.lstrip('#')
-            logger.info(f"Searching for term: {term}")
-            
-            try:
-                # Get hashtag info first
-                logger.info(f"Getting hashtag info for #{term}...")
-                hashtag = await self.api.hashtag(name=term).info()
-                logger.info(f"Hashtag info received: {json.dumps(hashtag, indent=2)}")
-                
-                # Increased delay between info and videos
-                logger.info("Waiting before fetching videos...")
-                await asyncio.sleep(5)  # Increased from 2 to 5
-                
-                # Get videos for the hashtag
-                logger.info(f"Fetching videos for hashtag #{term}...")
-                hashtag_id = hashtag["challengeInfo"]["challenge"]["id"]
-                logger.info(f"Got hashtag ID: {hashtag_id}")
-                
-                # Make direct request to video listing endpoint
-                raw_response = await self.api.make_request(
-                    url="https://www.tiktok.com/api/challenge/item_list/",
-                    params={
-                        "challengeID": hashtag_id,
-                        "count": count,
-                        "cursor": 0
-                    }
-                )
-                logger.info(f"Raw video listing response: {json.dumps(raw_response, indent=2)}")
-                
-                # Process videos from response
-                videos = []
-                for item in raw_response.get("itemList", []):
-                    video: Video = self.api.video(data=item)
-                    videos.append(video)
-                    
-                logger.info(f"Successfully retrieved {len(videos)} videos for #{term}")
-                return videos
-
-            except Exception as e:
-                logger.error(f"Error fetching videos for #{term}: {e}")
-                logger.error(f"Error type: {type(e)}")
-                logger.error(f"Error args: {e.args}")
-                raise
-                
-        except Exception as e:
-            logger.error(f"Failed to search for videos: {e}")
-            logger.error(f"Error type: {type(e)}")
-            logger.error(f"Error args: {e.args}")
-            raise
-
-    async def get_user_info(self, username: str) -> Dict[str, Any]:
-        """Get user information"""
-        try:
-            # Initialize API if needed
-            if not self.api:
-                await self._init_api()
-                if not self.api:
-                    raise RuntimeError("Failed to initialize TikTok API")
-            
-            # Get user info
-            user = await self.api.user(username).info()
-            if isinstance(user, dict):
-                return user
-            return user.as_dict
-            
-        except Exception as e:
-            logger.error(f"Failed to get user info: {e}")
-            raise
 
     async def close(self):
         """Cleanup resources"""

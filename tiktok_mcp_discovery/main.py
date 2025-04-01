@@ -3,6 +3,7 @@ import logging
 from typing import Dict, Any, List, Tuple, Optional
 from tiktok_mcp_discovery.tiktok_client import TikTokClient
 from tiktok_mcp_discovery.models import User, Video, Hashtag
+from tiktok_mcp_discovery.prompts import get_search_prompt
 import asyncio
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
@@ -60,29 +61,7 @@ async def get_health_status() -> Tuple[str, str]:
 @mcp.prompt()
 def search_prompt(query: str) -> str:
     """Create a prompt for searching TikTok videos"""
-    return f"""I'll help you find TikTok videos related to: {query}
-
-IMPORTANT: This service ONLY supports single-word hashtag searches (e.g. #cooking, #snowboarding, #fitness).
-Multi-word searches or regular keywords are NOT supported.
-
-Examples of valid searches:
-- #cooking
-- #recipe 
-- #chef
-- #snowboard
-- #workout
-
-Examples of searches that will NOT work:
-- cooking videos
-- snowboarding influencer
-- professional chef
-- workout routine
-
-Would you like me to:
-1. Search for videos with specific hashtags (must be single words starting with #)
-2. Look for trending videos in this category
-
-Please specify which single-word hashtags you'd like to explore!"""
+    return get_search_prompt(query)
 
 @mcp.tool()
 async def search_videos(search_terms: List[str], count: int = 30) -> Dict[str, Any]:
@@ -127,97 +106,37 @@ async def search_videos(search_terms: List[str], count: int = 30) -> Dict[str, A
         
         for term in search_terms:
             try:
-                # Transform and validate the search term
-                original_term = term
+                # Search for videos using the improved client
+                search_result = await tiktok_client.search_videos(term, count=count)
                 
-                # Process multi-word keywords into individual hashtags
-                if ' ' in term:
-                    # Split and clean each word, adding # prefix
-                    hashtags = [f"#{word.strip().lower()}" for word in term.split() if word.strip()]
-                    logger.info(f"Split multi-word search '{term}' into hashtags: {', '.join(hashtags)}")
-                    transformations[original_term] = hashtags
-                    
-                    # Search for each hashtag
-                    all_videos = []
-                    for hashtag in hashtags:
-                        try:
-                            tiktok_videos = await tiktok_client.search_videos(hashtag, count=count)
-                            
-                            # Convert TikTokApi videos to our Video model using from_tiktok_video
-                            for tiktok_video in tiktok_videos:
-                                video = await Video.from_tiktok_video(
-                                    video=tiktok_video,
-                                    get_cached_user=get_cached_user,
-                                    cache_user=cache_user,
-                                    get_cached_hashtag=get_cached_hashtag,
-                                    cache_hashtag=cache_hashtag
-                                )
-                                all_videos.append(video)
-                                
-                        except Exception as e:
-                            logger.error(f"Error searching for hashtag '{hashtag}': {str(e)}")
-                            logger.error(f"Error type: {type(e)}")
-                            continue
-                    
-                    # Deduplicate videos
-                    seen_ids = set()
-                    processed_videos = []
-                    
-                    for video in all_videos:
-                        if video.id not in seen_ids:
-                            seen_ids.add(video.id)
-                            processed_videos.append(video.to_dict())
-                    
-                    results[original_term] = processed_videos
-                    logger.info(f"Found {len(processed_videos)} unique videos for term '{term}'")
-                    logger.info(f"Cached {len(user_cache)} unique users and {len(hashtag_cache)} unique hashtags during this search")
-                    
-                else:
-                    # Handle single word terms similarly
-                    all_videos = []
-                    try:
-                        tiktok_videos = await tiktok_client.search_videos(term, count=count)
-                        
-                        for tiktok_video in tiktok_videos:
-                            video = await Video.from_tiktok_video(
-                                video=tiktok_video,
-                                get_cached_user=get_cached_user,
-                                cache_user=cache_user,
-                                get_cached_hashtag=get_cached_hashtag,
-                                cache_hashtag=cache_hashtag
-                            )
-                            all_videos.append(video)
-                            
-                        # Deduplicate videos
-                        seen_ids = set()
-                        processed_videos = []
-                        
-                        for video in all_videos:
-                            if video.id not in seen_ids:
-                                seen_ids.add(video.id)
-                                processed_videos.append(video.to_dict())
-                        
-                        results[original_term] = processed_videos
-                        logger.info(f"Found {len(processed_videos)} videos for term '{term}'")
-                        logger.info(f"Cached {len(user_cache)} unique users and {len(hashtag_cache)} unique hashtags during this search")
-                        
-                    except Exception as e:
-                        logger.error(f"Error searching for term '{term}': {str(e)}")
-                        logger.error(f"Error type: {type(e)}")
-                        results[original_term] = []
-                        errors[original_term] = {
-                            'error': str(e),
-                            'type': str(type(e).__name__)
-                        }
+                # Process each video through our models
+                processed_videos = []
+                for original_term, videos in search_result["results"].items():
+                    for tiktok_video in videos:
+                        video = await Video.from_tiktok_video(
+                            video=tiktok_video,
+                            get_cached_user=get_cached_user,
+                            cache_user=cache_user,
+                            get_cached_hashtag=get_cached_hashtag,
+                            cache_hashtag=cache_hashtag
+                        )
+                        processed_videos.append(video.to_dict())
+                
+                # Store results and any transformations
+                results[term] = processed_videos
+                if search_result["transformations"]:
+                    transformations.update(search_result["transformations"])
+                if search_result["errors"]:
+                    errors.update(search_result["errors"])
+                
+                logger.info(f"Processed {len(processed_videos)} videos for term '{term}'")
+                logger.info(f"Cached {len(user_cache)} unique users and {len(hashtag_cache)} unique hashtags during this search")
                 
             except Exception as e:
-                logger.error(f"Error searching for term '{term}': {str(e)}")
-                logger.error(f"Error type: {type(e)}")
-                results[original_term] = []
-                errors[original_term] = {
-                    'error': str(e),
-                    'type': str(type(e).__name__)
-                }
+                logger.error(f"Error processing term '{term}': {str(e)}")
+                results[term] = []
+                errors[term] = str(e)
+                
     finally:
         # Remove our custom handler
         logger.removeHandler(log_capture)
