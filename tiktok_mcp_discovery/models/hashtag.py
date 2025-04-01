@@ -1,5 +1,6 @@
 from typing import Dict, Optional, Callable
 from dataclasses import dataclass
+from datetime import datetime
 
 @dataclass
 class Hashtag:
@@ -8,7 +9,11 @@ class Hashtag:
     """
     id: str  # challengeID in TikTok's API
     name: str  # Name without the #
-    info: Dict  # Full info from the hashtag.info() call
+    desc: str  # Description of the hashtag
+    video_count: int  # Number of videos using this hashtag
+    view_count: int  # Total views across all videos
+    is_commerce: bool  # Whether this is a commerce hashtag
+    created_at: datetime  # When the hashtag was created
     
     @classmethod
     async def get_or_create(
@@ -42,10 +47,18 @@ class Hashtag:
         if not tag_id and info:
             tag_id = info.get("challengeID", "")
             
+        # Extract fields from info
+        challenge = info.get("challengeInfo", {}).get("challenge", {})
+        stats = info.get("challengeInfo", {}).get("stats", {})
+        
         hashtag = cls(
             id=tag_id,
             name=name,
-            info=info
+            desc=challenge.get("desc", ""),
+            video_count=stats.get("videoCount", 0),
+            view_count=stats.get("viewCount", 0),
+            is_commerce=bool(challenge.get("isCommerce", False)),
+            created_at=datetime.fromtimestamp(int(challenge.get("createTime", 0)))
         )
         
         # Cache if caching is enabled
@@ -59,6 +72,10 @@ class Hashtag:
         return {
             'id': self.id,
             'name': self.name,
-            'info': self.info,
+            'desc': self.desc,
+            'video_count': self.video_count,
+            'view_count': self.view_count,
+            'is_commerce': self.is_commerce,
+            'created_at': self.created_at.isoformat(),
             'url': f"https://www.tiktok.com/tag/{self.name}"
         } 

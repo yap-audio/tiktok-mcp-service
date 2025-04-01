@@ -1,5 +1,6 @@
 from typing import Dict, Optional, Callable
 from dataclasses import dataclass
+from datetime import datetime
 
 @dataclass
 class User:
@@ -8,7 +9,15 @@ class User:
     """
     id: str
     username: str
-    info: Dict
+    nickname: str
+    bio: str
+    follower_count: int
+    following_count: int
+    video_count: int
+    heart_count: int
+    verified: bool
+    private: bool
+    created_at: datetime
     
     @classmethod
     async def get_or_create(
@@ -37,7 +46,25 @@ class User:
         
         # If not in cache or no cache functions provided, create new
         info = await get_info_func()
-        user = cls(id=user_id, username=username, info=info)
+        
+        # Extract user info and stats
+        user_info = info.get("userInfo", {})
+        user_data = user_info.get("user", {})
+        stats = user_info.get("stats", {})
+        
+        user = cls(
+            id=user_id,
+            username=username,
+            nickname=user_data.get("nickname", ""),
+            bio=user_data.get("signature", ""),
+            follower_count=stats.get("followerCount", 0),
+            following_count=stats.get("followingCount", 0),
+            video_count=stats.get("videoCount", 0),
+            heart_count=stats.get("heartCount", 0),
+            verified=bool(user_data.get("verified", False)),
+            private=bool(user_data.get("privateAccount", False)),
+            created_at=datetime.fromtimestamp(int(user_data.get("createTime", 0)))
+        )
         
         # Cache if caching is enabled
         if cache_user:
@@ -50,5 +77,14 @@ class User:
         return {
             'id': self.id,
             'username': self.username,
-            'info': self.info
+            'nickname': self.nickname,
+            'bio': self.bio,
+            'follower_count': self.follower_count,
+            'following_count': self.following_count,
+            'video_count': self.video_count,
+            'heart_count': self.heart_count,
+            'verified': self.verified,
+            'private': self.private,
+            'created_at': self.created_at.isoformat(),
+            'url': f"https://www.tiktok.com/@{self.username}"
         } 
