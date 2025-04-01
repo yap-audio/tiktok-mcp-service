@@ -3,6 +3,8 @@ import json
 import logging
 import os
 from pathlib import Path
+import pytest
+from typing import Dict, Any
 
 from mcp import ClientSession, StdioServerParameters, stdio_client
 
@@ -105,6 +107,118 @@ async def main():
     except Exception as e:
         logger.error(f"\nServer tests failed: {str(e)}")
         raise
+
+@pytest.mark.asyncio
+async def test_health_endpoint(mcp_session):
+    """Test the health status endpoint"""
+    response = await mcp_session.read_resource("status://health")
+    health_json = json.loads(response.contents[0].text)
+    health_data = json.loads(health_json[0])
+    mime_type = health_json[1]
+    
+    assert mime_type == "application/json"
+    assert health_data["status"] == "running"
+    assert health_data["api_initialized"] is True
+    assert "service" in health_data
+    assert health_data["service"]["name"] == "TikTok MCP Service"
+
+@pytest.mark.asyncio
+async def test_single_hashtag_search(mcp_session):
+    """Test searching with a single hashtag"""
+    result = await mcp_session.call_tool(
+        "search_videos",
+        arguments={"search_terms": ["#python"]}
+    )
+    data = json.loads(result.content[0].text)
+    
+    assert "results" in data
+    assert "#python" in data["results"]
+    videos = data["results"]["#python"]
+    assert len(videos) > 0
+    
+    # Test video structure
+    video = videos[0]
+    assert "id" in video
+    assert "description" in video
+    assert "author" in video
+    assert "stats" in video
+    assert "url" in video
+    assert "sound" in video
+    assert "hashtags" in video
+
+@pytest.mark.asyncio
+async def test_multi_word_search(mcp_session):
+    """Test searching with multi-word terms"""
+    result = await mcp_session.call_tool(
+        "search_videos",
+        arguments={"search_terms": ["python programming"]}
+    )
+    data = json.loads(result.content[0].text)
+    
+    # Check transformations
+    assert "transformations" in data
+    assert "python programming" in data["transformations"]
+    hashtags = data["transformations"]["python programming"]
+    assert len(hashtags) == 2
+    assert "#python" in hashtags
+    assert "#programming" in hashtags
+    
+    # Check results
+    assert "results" in data
+    assert "python programming" in data["results"]
+    videos = data["results"]["python programming"]
+    assert len(videos) > 0
+
+@pytest.mark.asyncio
+async def test_mixed_search(mcp_session):
+    """Test searching with both hashtags and keywords"""
+    result = await mcp_session.call_tool(
+        "search_videos",
+        arguments={"search_terms": ["#python coding"]}
+    )
+    data = json.loads(result.content[0].text)
+    
+    assert "transformations" in data
+    assert "#python coding" in data["transformations"]
+    assert "results" in data
+    assert "#python coding" in data["results"]
+
+@pytest.mark.asyncio
+async def test_error_handling(mcp_session):
+    """Test error handling for invalid searches"""
+    result = await mcp_session.call_tool(
+        "search_videos",
+        arguments={"search_terms": ["!@#$%^"]}
+    )
+    data = json.loads(result.content[0].text)
+    
+    assert "errors" in data
+    assert "!@#$%^" in data["errors"]
+
+@pytest.mark.asyncio
+async def test_caching(mcp_session):
+    """Test that caching is working for repeated searches"""
+    # Make two identical searches
+    search_term = "#python"
+    result1 = await mcp_session.call_tool(
+        "search_videos",
+        arguments={"search_terms": [search_term]}
+    )
+    result2 = await mcp_session.call_tool(
+        "search_videos",
+        arguments={"search_terms": [search_term]}
+    )
+    
+    data1 = json.loads(result1.content[0].text)
+    data2 = json.loads(result2.content[0].text)
+    
+    # Results should be consistent
+    assert data1["results"][search_term] == data2["results"][search_term]
+    
+    # Check logs for cache hits
+    assert "logs" in data2
+    cache_hits = [log for log in data2["logs"] if "cache hit" in log.lower()]
+    assert len(cache_hits) > 0
 
 if __name__ == "__main__":
     asyncio.run(main())

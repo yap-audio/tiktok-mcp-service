@@ -1,47 +1,60 @@
-import asyncio
+import pytest
 import logging
-from tiktok_mcp_discovery.tiktok_client import TikTokClient
+from typing import List, Dict, Any
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-async def test_client():
-    """Test the TikTok client directly"""
-    client = TikTokClient()
+@pytest.mark.asyncio
+async def test_hashtag_search(tiktok_client):
+    """Test direct hashtag search functionality"""
+    hashtag = "python"
+    videos = await tiktok_client.search_videos(hashtag, count=5)
     
-    try:
-        # Test initialization
-        await client._init_api()
-        logger.info("Client initialization successful")
-        
-        # Test hashtag search
-        hashtag = "python"
-        logger.info(f"\nTesting hashtag search for #{hashtag}")
-        videos = await client.search_videos(hashtag, count=5)
-        logger.info(f"Found {len(videos)} videos")
-        
-        # Show sample results
-        for i, video in enumerate(videos[:2], 1):
-            logger.info(f"\nVideo {i}:")
-            logger.info(f"Description: {video.get('desc', 'N/A')[:100]}...")
-            logger.info(f"Stats: {video.get('stats', {})}")
-            
-    except Exception as e:
-        logger.error(f"Client test failed: {str(e)}")
-        raise
-    finally:
-        await client.close()
-
-async def main():
-    """Run all client tests"""
-    logger.info("Starting client tests...")
+    assert "results" in videos
+    assert hashtag in videos["results"]
+    assert len(videos["results"][hashtag]) > 0
     
-    try:
-        await test_client()
-        logger.info("\nAll client tests completed successfully!")
-    except Exception as e:
-        logger.error(f"\nClient tests failed: {str(e)}")
+    # Test video structure
+    video = videos["results"][hashtag][0]
+    assert video.id is not None
+    assert hasattr(video, "description")
+    assert hasattr(video, "author")
+    assert hasattr(video, "stats")
 
-if __name__ == "__main__":
-    asyncio.run(main()) 
+@pytest.mark.asyncio
+async def test_multi_word_search(tiktok_client):
+    """Test multi-word search transformation"""
+    search_term = "python programming"
+    result = await tiktok_client.search_videos(search_term, count=5)
+    
+    assert "results" in result
+    assert search_term in result["results"]
+    assert "transformations" in result
+    assert search_term in result["transformations"]
+    
+    # Verify transformations
+    transformed_hashtags = result["transformations"][search_term]
+    assert len(transformed_hashtags) == 2
+    assert "#python" in transformed_hashtags
+    assert "#programming" in transformed_hashtags
+
+@pytest.mark.asyncio
+async def test_hashtag_info(tiktok_client):
+    """Test getting hashtag information"""
+    hashtag_name = "python"
+    hashtag = await tiktok_client.get_hashtag(hashtag_name)
+    
+    assert hashtag is not None
+    assert hashtag.name == hashtag_name
+    assert hashtag.id is not None
+
+@pytest.mark.asyncio
+async def test_error_handling(tiktok_client):
+    """Test error handling for invalid searches"""
+    invalid_term = "!@#$%^"
+    result = await tiktok_client.search_videos(invalid_term, count=5)
+    
+    assert "errors" in result
+    assert invalid_term in result["errors"] 
