@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from tiktok_mcp_service.tiktok_client import TikTokClient
+from tiktok_mcp_discovery.tiktok_client import TikTokClient
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

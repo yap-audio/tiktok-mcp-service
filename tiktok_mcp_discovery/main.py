@@ -1,7 +1,7 @@
 from mcp.server.fastmcp import FastMCP
 import logging
 from typing import Dict, Any, List, Tuple
-from tiktok_mcp_service.tiktok_client import TikTokClient
+from tiktok_mcp_discovery.tiktok_client import TikTokClient
 import asyncio
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator

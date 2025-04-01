@@ -17,7 +17,7 @@ async def test_health():
     # Create server parameters
     server_params = StdioServerParameters(
         command="python",
-        args=["tiktok_mcp_service/main.py"],
+        args=["tiktok_mcp_discovery/main.py"],
     )
     
     logger.info("Testing health endpoint...")

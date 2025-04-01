@@ -1,4 +1,4 @@
-# TikTok MCP Service
+# TikTok Discovery MCP
 
 A Model Context Protocol service for TikTok video discovery and metadata extraction. This service provides a robust interface for searching TikTok videos by hashtags and retrieving trending content, with built-in anti-detection measures and error handling.
 
@@ -31,7 +31,7 @@ poetry install
 poetry run python -m playwright install
 
 # Start the service
-poetry run python -m tiktok_mcp_service.main
+poetry run python -m tiktok_mcp_discovery.main
 ```
 
 ## Claude Desktop Integration
@@ -40,13 +40,13 @@ Once your service is running, you can integrate it with Claude Desktop. Since we
 
 ```bash
 # Navigate to the project directory
-cd /path/to/tiktok-mcp-service
+cd /path/to/tiktok-mcp-discovery
 
 # Install the service in Claude Desktop with Poetry in editable mode
-poetry run mcp install tiktok_mcp_service/main.py --with-editable . -f .env
+poetry run mcp install tiktok_mcp_discovery/main.py --with-editable . -f .env
 
 # Optional: Install with a custom name
-poetry run mcp install tiktok_mcp_service/main.py --name "TikTok Video Search" --with-editable . -f .env
+poetry run mcp install tiktok_mcp_discovery/main.py --name "TikTok Video Discovery" --with-editable . -f .env
 ```
 
 After installation, the service will be available in Claude Desktop and will run using Poetry for proper dependency management.

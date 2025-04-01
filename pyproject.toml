@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "TikTok Model Context Protocol Service"
 authors = ["Your Name <your.email@example.com>"]
 readme = "README.md"
-packages = [{include = "tiktok_mcp_service"}]
+packages = [{include = "tiktok_mcp_discovery"}]
 
 [tool.poetry.dependencies]
 python = "^3.10"
