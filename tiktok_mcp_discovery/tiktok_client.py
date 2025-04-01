@@ -1,4 +1,5 @@
 from TikTokApi import TikTokApi
+from TikTokApi.api.video import Video
 import asyncio
 import os
 from dotenv import load_dotenv
@@ -311,7 +312,8 @@ class TikTokClient:
                 # Process videos from response
                 videos = []
                 for item in raw_response.get("itemList", []):
-                    videos.append(self.api.video(data=item).as_dict)
+                    video: Video = self.api.video(data=item)
+                    videos.append(video)
                     
                 logger.info(f"Successfully retrieved {len(videos)} videos for #{term}")
                 return videos

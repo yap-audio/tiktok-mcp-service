@@ -4,6 +4,6 @@ globs:
 alwaysApply: true
 ---
 
-# Your rule content
+# What are we building here?
 
 We're building a collection of model context protocols (MCPs) for AI agents to find, reach out to, and partner with UGC influencers on tiktok.
