@@ -6,7 +6,7 @@ class Hashtag:
     """
     Represents a TikTok hashtag with its full information.
     """
-    id: str
+    id: str  # challengeID in TikTok's API
     name: str  # Name without the #
     info: Dict  # Full info from the hashtag.info() call
     
@@ -23,7 +23,7 @@ class Hashtag:
         Get a Hashtag from cache or create if not exists.
         
         Args:
-            tag_id: The TikTok hashtag ID
+            tag_id: The TikTok hashtag ID (challengeID)
             name: The hashtag name (without #)
             get_info_func: Async function to call for getting hashtag info
             get_cached: Optional function to get a cached hashtag
@@ -37,7 +37,16 @@ class Hashtag:
         
         # If not in cache or no cache functions provided, create new
         info = await get_info_func()
-        hashtag = cls(id=tag_id, name=name, info=info)
+        
+        # Extract the ID from the info if not provided
+        if not tag_id and info:
+            tag_id = info.get("challengeID", "")
+            
+        hashtag = cls(
+            id=tag_id,
+            name=name,
+            info=info
+        )
         
         # Cache if caching is enabled
         if cache:
@@ -50,5 +59,6 @@ class Hashtag:
         return {
             'id': self.id,
             'name': self.name,
-            'info': self.info
+            'info': self.info,
+            'url': f"https://www.tiktok.com/tag/{self.name}"
         } 
