@@ -1,0 +1,7 @@
+---
+description: this rule is helpful for when we want to take a step back and check if we're still following what we're supposed to do at a high level
+globs: 
+alwaysApply: false
+---
+
+# high level rules

@@ -1,9 +1,12 @@
+"""Pytest configuration and fixtures."""
+
 import pytest
 import asyncio
 import os
 from dotenv import load_dotenv
 import logging
 import pytest_asyncio
+from typing import Generator
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -30,23 +33,54 @@ def check_env_vars(request):
         if missing_vars:
             pytest.skip(f"Missing required environment variables for integration tests: {', '.join(missing_vars)}")
 
-@pytest_asyncio.fixture
-async def event_loop():
-    """Create an instance of the default event loop for each test case.
-    
-    Using function scope by default as recommended by pytest-asyncio.
-    This ensures each test gets a fresh event loop.
-    """
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+@pytest.fixture(scope="session")
+def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
+    """Create an instance of the default event loop for each test case."""
+    loop = asyncio.get_event_loop_policy().new_event_loop()
     yield loop
-    # Close all tasks
-    pending = asyncio.all_tasks(loop)
-    for task in pending:
-        task.cancel()
-    # Wait for tasks to cancel
-    if pending:
-        await asyncio.gather(*pending, return_exceptions=True)
-    # Close the loop
-    await loop.shutdown_asyncgens()
-    loop.close() 
+    loop.close()
+
+@pytest.fixture
+async def mock_session():
+    """Mock TikTok session for testing."""
+    class MockSession:
+        def __init__(self):
+            self.api = None
+            self.initialized = False
+            self.rotation_count = 0
+            
+        async def initialize(self):
+            self.initialized = True
+            self.api = "mock_api"
+            
+        async def close(self):
+            self.initialized = False
+            self.api = None
+            
+        async def should_rotate(self):
+            return self.rotation_count >= 3
+            
+    return MockSession()
+
+@pytest.fixture
+async def mock_client(mock_session):
+    """Mock TikTok client for testing."""
+    class MockClient:
+        def __init__(self):
+            self.api = None
+            self.session = mock_session
+            
+        async def _init_api(self):
+            self.api = "mock_api"
+            
+        async def close(self):
+            self.api = None
+            
+        async def search_videos(self, term, count=30):
+            return {
+                "results": {
+                    term: [{"id": "123", "desc": "Test video"}]
+                }
+            }
+            
+    return MockClient() 

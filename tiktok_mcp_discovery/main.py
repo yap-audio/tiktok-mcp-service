@@ -1,3 +1,5 @@
+"""TikTok MCP Discovery Service main module."""
+
 from mcp.server.fastmcp import FastMCP
 import logging
 from typing import Dict, Any, List, Tuple, Optional
@@ -11,6 +13,11 @@ from mcp.server import Server
 import json
 import mcp.server.stdio
 from mcp.server.models import InitializationOptions
+from TikTokApi.exceptions import (
+    InvalidResponseException,
+    CaptchaException,
+    TikTokException
+)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -23,18 +30,15 @@ tiktok_client = TikTokClient()
 async def lifespan(server: Server) -> AsyncIterator[Dict[str, Any]]:
     """Manage server startup and shutdown lifecycle."""
     try:
-        # Initialize API on startup
+        # Initialize client (which handles session and anti-detection setup)
         await tiktok_client._init_api()
-        logger.info("TikTok API initialized")
-        
-        # Add a delay to ensure the API is fully ready
-        await asyncio.sleep(4)
+        logger.info("TikTok client initialized with all components")
         
         yield {"tiktok_client": tiktok_client}
     finally:
-        # Clean up on shutdown
+        # Clean up client (which handles all component cleanup)
         await tiktok_client.close()
-        logger.info("TikTok API shutdown complete")
+        logger.info("TikTok client and components shutdown complete")
 
 # Initialize FastMCP app with lifespan
 mcp = FastMCP(
@@ -65,29 +69,23 @@ def search_prompt(query: str) -> str:
 
 @mcp.tool()
 async def search_videos(search_terms: List[str], count: int = 30) -> Dict[str, Any]:
-    """Search for TikTok videos based on search terms"""
+    """Search for TikTok videos based on search terms.
+    
+    Args:
+        search_terms: List of search terms to query
+        count: Number of videos to return per term (default: 30)
+        
+    Returns:
+        Dictionary containing:
+        - results: Processed video results for each search term
+        - logs: Captured log messages during processing
+        - errors: Any errors encountered during processing
+        - transformations: Search term transformations applied
+    """
     results = {}
     logs = []
     errors = {}
     transformations = {}
-    
-    # Create caches for this search session only
-    user_cache: Dict[str, User] = {}
-    hashtag_cache: Dict[str, Hashtag] = {}
-    
-    def get_cached_user(user_id: str) -> Optional[User]:
-        return user_cache.get(user_id)
-        
-    def cache_user(user_id: str, user: User):
-        user_cache[user_id] = user
-        logger.info(f"Cached user info for {user_id}")
-
-    def get_cached_hashtag(tag_id: str) -> Optional[Hashtag]:
-        return hashtag_cache.get(tag_id)
-        
-    def cache_hashtag(tag_id: str, hashtag: Hashtag):
-        hashtag_cache[tag_id] = hashtag
-        logger.info(f"Cached hashtag info for {tag_id}")
     
     # Create a custom log handler to capture logs
     class LogCapture(logging.Handler):
@@ -100,51 +98,55 @@ async def search_videos(search_terms: List[str], count: int = 30) -> Dict[str, A
     logger.addHandler(log_capture)
     
     try:
-        # Ensure API is initialized
-        if not tiktok_client.api:
-            await tiktok_client._init_api()
-        
         for term in search_terms:
             try:
-                # Search for videos using the improved client
-                search_result = await tiktok_client.search_videos(term, count=count)
+                # Validate search term
+                if not term or not term.strip():
+                    raise ValueError("Empty search term")
+                if len(term) > 100:
+                    raise ValueError("Search term too long")
                 
-                # Process each video through our models
-                processed_videos = []
-                for original_term, videos in search_result["results"].items():
-                    for tiktok_video in videos:
-                        video = await Video.from_tiktok_video(
-                            video=tiktok_video,
-                            get_cached_user=get_cached_user,
-                            cache_user=cache_user,
-                            get_cached_hashtag=get_cached_hashtag,
-                            cache_hashtag=cache_hashtag
-                        )
-                        processed_videos.append(video.to_dict())
+                # Use TikTokClient for search (it handles session management, retries, etc.)
+                search_result = await tiktok_client.search_videos(
+                    term=term,
+                    count=count
+                )
                 
-                # Store results and any transformations
-                results[term] = processed_videos
-                if search_result["transformations"]:
-                    transformations.update(search_result["transformations"])
-                if search_result["errors"]:
-                    errors.update(search_result["errors"])
+                # Store results and metadata
+                results[term] = search_result["results"].get(term, [])
+                if search_result.get("transformations"):
+                    transformations[term] = search_result["transformations"].get(term)
+                if search_result.get("errors"):
+                    errors[term] = search_result["errors"].get(term)
                 
-                logger.info(f"Processed {len(processed_videos)} videos for term '{term}'")
-                logger.info(f"Cached {len(user_cache)} unique users and {len(hashtag_cache)} unique hashtags during this search")
+                logger.info(
+                    f"Processed {len(results[term])} videos for term '{term}'"
+                )
+                
+            except ValueError as e:
+                logger.error(f"Invalid search term '{term}': {str(e)}")
+                errors[term] = str(e)
+                results[term] = []
+                
+            except (InvalidResponseException, CaptchaException) as e:
+                logger.error(f"API error for term '{term}': {str(e)}")
+                errors[term] = str(e)
+                results[term] = []
+                
+            except TikTokException as e:
+                logger.error(f"TikTok error for term '{term}': {str(e)}")
+                errors[term] = str(e)
+                results[term] = []
                 
             except Exception as e:
-                logger.error(f"Error processing term '{term}': {str(e)}")
-                results[term] = []
+                logger.error(f"Unexpected error processing term '{term}': {str(e)}")
                 errors[term] = str(e)
+                results[term] = []
                 
     finally:
         # Remove our custom handler
         logger.removeHandler(log_capture)
-        # Clear the caches
-        user_cache.clear()
-        hashtag_cache.clear()
     
-    # Include logs, errors, and transformations in the response
     return {
         "results": results,
         "logs": logs,
