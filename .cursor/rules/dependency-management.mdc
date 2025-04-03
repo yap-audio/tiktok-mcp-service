@@ -1,0 +1,9 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+
+# How do we manage our dependencies?
+
+We manage all of our dependencies through `poetry`.

@@ -1,28 +1,39 @@
 [tool.poetry]
-name = "tiktok-mcp-service"
+name = "tiktok-mcp"
 version = "0.1.0"
-description = "TikTok Model Context Protocol Service"
+description = "A Model Context Protocol service for searching TikTok videos"
 authors = ["Your Name <your.email@example.com>"]
 readme = "README.md"
-packages = [{include = "tiktok_mcp_service"}]
+packages = [{include = "tiktok_mcp_discovery"}]
 
 [tool.poetry.dependencies]
 python = "^3.10"
+mcp = {version = "^1.6.0", extras = ["cli"]}
 TikTokApi = "^7.0.0"
+python-dotenv = "^1.0.0"
+backoff = "^2.2.1"
 fastapi = "^0.110.0"
 uvicorn = "^0.27.1"
-python-dotenv = "^1.0.0"
-mcp = {version = "^1.6.0", extras = ["cli"]}
-backoff = "^2.2.1"
 aiohttp = "^3.9.3"
 playwright-stealth = "^1.0.6"
 playwright = "^1.51.0"
 
 [tool.poetry.group.dev.dependencies]
+pytest = "^8.3.5"
+pytest-asyncio = "^0.26.0"
+pytest-cov = "^4.1.0"
 black = "^24.2.0"
-pytest = "^8.0.0"
-pytest-asyncio = "^0.23.5"
 
 [build-system]
 requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api" 
+build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+markers = [
+    "asyncio: mark a test as an asyncio test"
+] 

@@ -1,0 +1,12 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+
+# Third-party library documentation
+
+- TiktokApi: https://github.com/davidteather/TikTok-Api/tree/main
+- mcp: https://github.com/modelcontextprotocol/python-sdk
+
+Always reference this documentation when making changes related to these libraries in our code.
